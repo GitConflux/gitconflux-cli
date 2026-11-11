@@ -1,0 +1,16 @@
+[package]
+name = "gitconflux-core"
+description = "Core types, configuration and security primitives for the GitConflux CLI"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+secrecy.workspace = true
+url.workspace = true
+
+[lints]
+workspace = true
