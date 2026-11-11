@@ -34,7 +34,7 @@ impl CliError {
 
 pub type Result<T> = std::result::Result<T, CliError>;
 
-fn out(line: &str) -> Result<()> {
+pub fn out(line: &str) -> Result<()> {
     writeln!(std::io::stdout(), "{line}").map_err(|e| CliError::Core(CoreError::Io(e.to_string())))
 }
 
@@ -53,7 +53,13 @@ pub async fn run(cli: Cli) -> Result<()> {
         Command::Auth(AuthCommand::Logout) => logout(&api, &store),
         Command::Auth(AuthCommand::Status) => status(&api, &store, cli.json).await,
         Command::Whoami => whoami(&api, &store, cli.json).await,
+        other => crate::read::run(other, &api, &store, cli.json).await,
     }
+}
+
+/// Public projects permit anonymous reads, so a missing token is not an error here.
+pub fn optional_client(api: &ApiUrl, store: &CredentialStore) -> Result<Client> {
+    client(api, store.resolve(api)?.map(|(t, _)| t))
 }
 
 fn read_token(args: &LoginArgs) -> Result<Token> {
@@ -75,7 +81,7 @@ fn read_token(args: &LoginArgs) -> Result<Token> {
     Ok(Token::new(&raw)?)
 }
 
-fn client(api: &ApiUrl, token: Option<Token>) -> Result<Client> {
+pub fn client(api: &ApiUrl, token: Option<Token>) -> Result<Client> {
     Ok(Client::new(api.clone(), token, &ClientOptions::default())?)
 }
 
@@ -101,7 +107,7 @@ fn logout(api: &ApiUrl, store: &CredentialStore) -> Result<()> {
     }
 }
 
-fn require_token(
+pub fn require_token(
     api: &ApiUrl,
     store: &CredentialStore,
 ) -> Result<(Token, gitconflux_core::Source)> {

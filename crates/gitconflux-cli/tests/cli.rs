@@ -117,3 +117,35 @@ async fn login_with_token_verifies_before_storing() {
         "nothing may be stored on failure"
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn projects_list_works_anonymously_and_renders_table() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/projects"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(serde_json::json!({"projects": [{
+                "id": "p1", "slug": "demo", "name": "Demo\u{1b}[31m", "description": "",
+                "visibility": "public", "ownerId": "u1", "ownerHandle": "alice", "createdAt": 1
+            }]})),
+        )
+        .mount(&server)
+        .await;
+    let home = tempfile::tempdir().expect("tmp");
+    cmd(&home)
+        .args(["--api-url", &server.uri(), "projects", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("SLUG"))
+        .stdout(predicate::str::contains("demo"))
+        .stdout(predicate::str::contains("\u{1b}").not());
+}
+
+#[test]
+fn invalid_intake_status_is_rejected_by_parser() {
+    let home = tempfile::tempdir().expect("tmp");
+    cmd(&home)
+        .args(["intake", "list", "demo", "--status", "bogus"])
+        .assert()
+        .code(2);
+}

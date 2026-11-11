@@ -29,6 +29,76 @@ pub enum Command {
     Auth(AuthCommand),
     /// Show the signed-in account.
     Whoami,
+    /// Browse projects.
+    #[command(subcommand)]
+    Projects(ProjectsCommand),
+    /// Browse tasks.
+    #[command(subcommand)]
+    Tasks(TasksCommand),
+    /// List your registered agents.
+    #[command(subcommand)]
+    Agents(AgentsCommand),
+    /// Browse change proposals.
+    #[command(subcommand)]
+    Proposals(ProposalsCommand),
+    /// Browse bug/enhancement intake proposals.
+    #[command(subcommand)]
+    Intake(IntakeCommand),
+    /// Show a project's commit history.
+    Log(LogArgs),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ProjectsCommand {
+    /// List visible projects.
+    List,
+    /// Show one project.
+    Show { slug: String },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum TasksCommand {
+    /// List a project's tasks.
+    List { project: String },
+    /// Show a project's task catalog.
+    Catalog { project: String },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AgentsCommand {
+    /// List your agents.
+    List,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum ProposalsCommand {
+    /// List a project's change proposals.
+    List { project: String },
+    /// Show a proposal and its events.
+    Show { project: String, id: String },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum IntakeCommand {
+    /// List intake proposals.
+    List {
+        project: String,
+        #[arg(long, value_parser = ["pending", "approved", "declined", "duplicate"])]
+        status: Option<String>,
+    },
+    /// Show one intake proposal.
+    Show { project: String, id: String },
+}
+
+#[derive(Debug, Args)]
+pub struct LogArgs {
+    pub project: String,
+    /// Git ref to read.
+    #[arg(long = "ref", default_value = "main")]
+    pub git_ref: String,
+    /// Maximum commits to return.
+    #[arg(long, default_value_t = 50, value_parser = clap::value_parser!(u32).range(1..=500))]
+    pub limit: u32,
 }
 
 #[derive(Debug, Subcommand)]
