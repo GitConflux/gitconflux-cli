@@ -16,6 +16,8 @@ pub enum ExitCode {
     Invalid = 7,
     Unavailable = 8,
     Io = 9,
+    Git = 10,
+    ChecksFailed = 11,
 }
 
 impl From<ExitCode> for u8 {
@@ -36,6 +38,10 @@ pub enum Error {
     Credentials(String),
     #[error("I/O error: {0}")]
     Io(String),
+    #[error("git failed: {message}")]
+    Git { code: Option<i32>, message: String },
+    #[error("invalid proposal: {0}")]
+    Proposal(String),
 }
 
 impl Error {
@@ -44,6 +50,8 @@ impl Error {
         match self {
             Self::InvalidApiUrl(_) | Self::InvalidToken(_) | Self::Config(_) => ExitCode::Usage,
             Self::Credentials(_) | Self::Io(_) => ExitCode::Io,
+            Self::Git { .. } => ExitCode::Git,
+            Self::Proposal(_) => ExitCode::Invalid,
         }
     }
 }

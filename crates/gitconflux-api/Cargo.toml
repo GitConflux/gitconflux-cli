@@ -9,7 +9,7 @@ publish.workspace = true
 
 [dependencies]
 gitconflux-core = { path = "../gitconflux-core" }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "multipart"] }
 serde.workspace = true
 serde_json.workspace = true
 thiserror = "2"

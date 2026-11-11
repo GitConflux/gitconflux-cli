@@ -2,6 +2,8 @@
 
 pub mod credentials;
 pub mod error;
+pub mod git;
+pub mod proposal;
 pub mod token;
 pub mod url;
 pub mod validate;
