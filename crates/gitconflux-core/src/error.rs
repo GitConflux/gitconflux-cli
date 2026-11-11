@@ -32,6 +32,10 @@ pub enum Error {
     InvalidToken(&'static str),
     #[error("{0}")]
     Config(String),
+    #[error("credential store error: {0}")]
+    Credentials(String),
+    #[error("I/O error: {0}")]
+    Io(String),
 }
 
 impl Error {
@@ -39,6 +43,7 @@ impl Error {
     pub fn exit_code(&self) -> ExitCode {
         match self {
             Self::InvalidApiUrl(_) | Self::InvalidToken(_) | Self::Config(_) => ExitCode::Usage,
+            Self::Credentials(_) | Self::Io(_) => ExitCode::Io,
         }
     }
 }
