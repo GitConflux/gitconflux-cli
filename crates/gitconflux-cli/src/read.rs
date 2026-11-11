@@ -42,6 +42,7 @@ pub async fn run(cmd: &Command, api: &ApiUrl, store: &CredentialStore, json: boo
         Command::Proposals(c) => proposals(&ctx, c).await,
         Command::Intake(c) => intake(&ctx, c).await,
         Command::Log(a) => log(&ctx, a).await,
+        Command::Clone(a) => crate::submit::clone_repo(&ctx, a).await,
         Command::Auth(_) | Command::Whoami => Ok(()),
     }
 }
@@ -153,6 +154,7 @@ async fn proposals(ctx: &Ctx<'_>, cmd: &ProposalsCommand) -> Result<()> {
                 .collect();
             out(&table(&["ID", "STATUS", "TASK", "UPDATED"], &rows))
         }
+        ProposalsCommand::Submit(a) => crate::submit::submit(ctx, a).await,
         ProposalsCommand::Show { project, id } => {
             let (p, events) = client.get_proposal(project, id).await?;
             if ctx.json {

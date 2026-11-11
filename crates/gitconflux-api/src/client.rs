@@ -10,12 +10,13 @@ use url::Url;
 
 use crate::error::{ApiError, sanitize};
 use crate::models::{
-    Account, Agent, Catalog, ChangeProposal, Commit, IntakeProposal, NewAgent, NewIntake,
-    NewProject, NewTask, Project, ProposalEvent, Task, TokenRecord,
+    Account, Agent, Catalog, ChangeProposal, Commit, GitCredentials, IntakeProposal, NewAgent,
+    NewIntake, NewProject, NewTask, Project, ProposalEvent, SubmitResult, Task, TokenRecord,
 };
 
 const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 const MAX_GET_ATTEMPTS: u32 = 3;
+const UPLOAD_TIMEOUT: Duration = Duration::from_secs(300);
 
 #[derive(Debug, Clone)]
 pub struct ClientOptions {
@@ -95,16 +96,85 @@ impl Client {
         if let Some(body) = body {
             req = req.json(body);
         }
-        let mut resp = req.send().await.map_err(map_reqwest)?;
-        let status = resp.status();
-        let mut buf = Vec::new();
-        while let Some(chunk) = resp.chunk().await.map_err(map_reqwest)? {
-            if buf.len() + chunk.len() > MAX_RESPONSE_BYTES {
-                return Err(ApiError::ResponseTooLarge(MAX_RESPONSE_BYTES));
-            }
-            buf.extend_from_slice(&chunk);
+        read_response(req.send().await.map_err(map_reqwest)?).await
+    }
+
+    /// Uploads a proposal. Sent exactly once; a timed-out upload may have succeeded, so the
+    /// caller must re-check proposal state before trying again.
+    pub async fn submit_proposal(
+        &self,
+        slug: &str,
+        agent_id: &str,
+        metadata: &Value,
+        bundle: Vec<u8>,
+    ) -> Result<SubmitResult, ApiError> {
+        let url = self.url(&["v1", "projects", slug, "proposals"])?;
+        let metadata = serde_json::to_string(metadata)
+            .map_err(|e| ApiError::InvalidRequest(sanitize(&e.to_string())))?;
+        let part = reqwest::multipart::Part::bytes(bundle)
+            .file_name("proposal.bundle")
+            .mime_str("application/octet-stream")
+            .map_err(|e| ApiError::InvalidRequest(sanitize(&e.to_string())))?;
+        let form = reqwest::multipart::Form::new()
+            .text("metadata", metadata)
+            .part("bundle", part);
+        let agent = HeaderValue::from_str(agent_id)
+            .map_err(|_| ApiError::InvalidRequest("agent ID is not a valid header value".into()))?;
+        let mut req = self
+            .http
+            .post(url)
+            .timeout(UPLOAD_TIMEOUT)
+            .header(ACCEPT, "application/json")
+            .header("x-agent-id", agent)
+            .multipart(form);
+        req = self.authorize(req)?;
+        let (status, bytes) = read_response(req.send().await.map_err(map_reqwest)?).await?;
+        if !status.is_success() {
+            return Err(http_error(status, &bytes));
         }
-        Ok((status, buf))
+        serde_json::from_slice(&bytes).map_err(decode)
+    }
+
+    /// Requests short-lived Git credentials. The token is sensitive.
+    pub async fn git_credentials(
+        &self,
+        slug: &str,
+        scope: &str,
+        ttl_seconds: u32,
+    ) -> Result<GitCredentials, ApiError> {
+        let body = serde_json::json!({ "scope": scope, "ttlSeconds": ttl_seconds });
+        let raw: RawGitCredentials = self
+            .post_key_whole(&["v1", "projects", slug, "git-credentials"], &body)
+            .await?;
+        let token = Token::new(&raw.token)
+            .map_err(|_| ApiError::Decode("server returned an invalid Git token".into()))?;
+        Ok(GitCredentials {
+            remote: raw.remote,
+            default_branch: raw.default_branch,
+            token,
+            expires_at: raw.expires_at,
+            scope: raw.scope,
+        })
+    }
+
+    async fn post_key_whole<T: DeserializeOwned>(
+        &self,
+        segments: &[&str],
+        body: &Value,
+    ) -> Result<T, ApiError> {
+        let url = self.url(segments)?;
+        let (_, bytes) = self.send(Method::POST, url, Some(body.clone())).await?;
+        serde_json::from_slice(&bytes).map_err(decode)
+    }
+
+    fn authorize(&self, req: reqwest::RequestBuilder) -> Result<reqwest::RequestBuilder, ApiError> {
+        let Some(token) = &self.token else {
+            return Ok(req);
+        };
+        let mut value = HeaderValue::from_str(&format!("Bearer {}", token.expose()))
+            .map_err(|_| ApiError::InvalidRequest("token is not a valid header value".into()))?;
+        value.set_sensitive(true);
+        Ok(req.header(AUTHORIZATION, value))
     }
 
     /// Mutations (anything but GET) are attempted exactly once: a timed-out request may
@@ -318,6 +388,28 @@ impl Client {
         let (_, bytes) = self.send(Method::GET, url, None).await?;
         extract(&bytes, "commits")
     }
+}
+
+async fn read_response(mut resp: reqwest::Response) -> Result<(StatusCode, Vec<u8>), ApiError> {
+    let status = resp.status();
+    let mut buf = Vec::new();
+    while let Some(chunk) = resp.chunk().await.map_err(map_reqwest)? {
+        if buf.len() + chunk.len() > MAX_RESPONSE_BYTES {
+            return Err(ApiError::ResponseTooLarge(MAX_RESPONSE_BYTES));
+        }
+        buf.extend_from_slice(&chunk);
+    }
+    Ok((status, buf))
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawGitCredentials {
+    remote: String,
+    default_branch: Option<String>,
+    token: String,
+    expires_at: i64,
+    scope: String,
 }
 
 #[derive(serde::Deserialize)]

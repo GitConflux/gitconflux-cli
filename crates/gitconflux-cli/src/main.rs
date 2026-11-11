@@ -1,7 +1,9 @@
+mod askpass;
 mod cli;
 mod commands;
 mod output;
 mod read;
+mod submit;
 mod write;
 
 use std::io::Write;
@@ -10,6 +12,9 @@ use clap::Parser;
 use gitconflux_core::ExitCode;
 
 fn main() -> std::process::ExitCode {
+    if let Some(code) = askpass::try_run() {
+        return code;
+    }
     let cli = cli::Cli::parse();
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()

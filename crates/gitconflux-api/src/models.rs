@@ -164,3 +164,35 @@ pub struct NewIntake<'a> {
     pub title: &'a str,
     pub description: &'a str,
 }
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CheckResult {
+    pub name: String,
+    pub passed: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SubmitResult {
+    pub proposal: ChangeProposal,
+    pub checks: Vec<CheckResult>,
+}
+
+/// Short-lived Git credentials; the token is redacted from `Debug` output.
+pub struct GitCredentials {
+    pub remote: String,
+    pub default_branch: Option<String>,
+    pub token: gitconflux_core::Token,
+    pub expires_at: i64,
+    pub scope: String,
+}
+
+impl std::fmt::Debug for GitCredentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GitCredentials")
+            .field("remote", &self.remote)
+            .field("scope", &self.scope)
+            .field("token", &"<redacted>")
+            .finish_non_exhaustive()
+    }
+}

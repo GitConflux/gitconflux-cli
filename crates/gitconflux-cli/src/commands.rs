@@ -17,6 +17,8 @@ pub enum CliError {
     Api(#[from] ApiError),
     #[error("{0}")]
     Usage(String),
+    #[error("{0}")]
+    ChecksFailed(String),
     #[error("not signed in; run `gcflx auth login` or set GITCONFLUX_TOKEN")]
     NotSignedIn,
 }
@@ -27,6 +29,7 @@ impl CliError {
             Self::Core(e) => e.exit_code(),
             Self::Api(e) => e.exit_code(),
             Self::Usage(_) => ExitCode::Usage,
+            Self::ChecksFailed(_) => ExitCode::ChecksFailed,
             Self::NotSignedIn => ExitCode::Unauthorized,
         }
     }

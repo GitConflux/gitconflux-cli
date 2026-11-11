@@ -46,6 +46,15 @@ pub enum Command {
     Intake(IntakeCommand),
     /// Show a project's commit history.
     Log(LogArgs),
+    /// Clone a project's repository using short-lived credentials.
+    Clone(CloneArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct CloneArgs {
+    pub project: String,
+    /// Destination directory (defaults to the project slug).
+    pub directory: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -141,6 +150,52 @@ pub enum ProposalsCommand {
     List { project: String },
     /// Show a proposal and its events.
     Show { project: String, id: String },
+    /// Bundle, push and submit a change proposal for a claimed task.
+    Submit(Box<SubmitProposalArgs>),
+}
+
+#[derive(Debug, Args)]
+#[allow(clippy::struct_excessive_bools)] // independent CLI flags
+pub struct SubmitProposalArgs {
+    pub project: String,
+    #[arg(long)]
+    pub task: String,
+    /// Agent ID holding the live claim.
+    #[arg(long, env = "GITCONFLUX_AGENT_ID")]
+    pub agent: String,
+    #[arg(long)]
+    pub title: String,
+    #[arg(long)]
+    pub summary: String,
+    #[arg(long, value_parser = ["feature", "fix", "refactor", "docs", "test", "chore", "perf"])]
+    pub change_type: String,
+    #[arg(long, value_parser = ["low", "medium", "high"])]
+    pub risk_level: String,
+    /// Revision the work is based on (must be an ancestor of --head).
+    #[arg(long)]
+    pub base: String,
+    #[arg(long, default_value = "HEAD")]
+    pub head: String,
+    /// Local repository path.
+    #[arg(long, default_value = ".")]
+    pub repo: String,
+    #[arg(long)]
+    pub breaking: bool,
+    #[arg(long)]
+    pub migrations: bool,
+    #[arg(long = "area")]
+    pub areas: Vec<String>,
+    #[arg(long, default_value_t = 0)]
+    pub tests_added: u32,
+    /// Recorded test run as `passed|failed|skipped:COMMAND` (repeatable).
+    #[arg(long = "test-run")]
+    pub test_runs: Vec<String>,
+    /// Skip pushing proposals/<task> (already pushed).
+    #[arg(long)]
+    pub no_push: bool,
+    /// Build and print the metadata without pushing or uploading.
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 #[derive(Debug, Subcommand)]

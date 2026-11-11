@@ -218,3 +218,83 @@ async fn debug_output_never_contains_token() {
     let c = client(&server, Some("gcx_supersecret"));
     assert!(!format!("{c:?}").contains("supersecret"));
 }
+
+fn proposal_json() -> serde_json::Value {
+    serde_json::json!({
+        "id": "pr1", "projectId": "p1", "taskId": "t1", "agentId": "a1",
+        "status": "tier1_failed", "metadata": {}, "createdAt": 1, "updatedAt": 2
+    })
+}
+
+#[tokio::test]
+async fn submit_proposal_sends_multipart_with_agent_header() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/projects/demo/proposals"))
+        .and(header("x-agent-id", "a1"))
+        .and(header("authorization", "Bearer gcx_abc"))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+            "proposal": proposal_json(),
+            "checks": [{"name": "bundle", "passed": false, "message": "bad"}]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let result = client(&server, Some("gcx_abc"))
+        .submit_proposal(
+            "demo",
+            "a1",
+            &serde_json::json!({"x": 1}),
+            b"# v2 git bundle\n".to_vec(),
+        )
+        .await
+        .expect("submitted");
+    assert_eq!(result.proposal.status, "tier1_failed");
+    assert!(!result.checks[0].passed);
+    let received = &server.received_requests().await.expect("requests")[0];
+    let ct = received
+        .headers
+        .get("content-type")
+        .expect("ct")
+        .to_str()
+        .expect("str")
+        .to_owned();
+    assert!(ct.starts_with("multipart/form-data"));
+    let body = String::from_utf8_lossy(&received.body);
+    assert!(body.contains("name=\"metadata\"") && body.contains("name=\"bundle\""));
+}
+
+#[tokio::test]
+async fn submit_proposal_is_never_retried() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/projects/demo/proposals"))
+        .respond_with(ResponseTemplate::new(503))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let err = client(&server, Some("t"))
+        .submit_proposal("demo", "a1", &serde_json::json!({}), vec![1])
+        .await
+        .expect_err("503");
+    assert_eq!(err.exit_code(), ExitCode::Unavailable);
+}
+
+#[tokio::test]
+async fn git_credentials_token_is_redacted() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/projects/demo/git-credentials"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "remote": "https://git.example/r.git", "defaultBranch": "main",
+            "token": "short_lived_secret", "expiresAt": 1, "scope": "write"
+        })))
+        .mount(&server)
+        .await;
+    let creds = client(&server, Some("t"))
+        .git_credentials("demo", "write", 600)
+        .await
+        .expect("ok");
+    assert_eq!(creds.token.expose(), "short_lived_secret");
+    assert!(!format!("{creds:?}").contains("short_lived_secret"));
+}
