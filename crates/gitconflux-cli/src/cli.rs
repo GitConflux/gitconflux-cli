@@ -48,6 +48,11 @@ pub enum Command {
     Log(LogArgs),
     /// Clone a project's repository using short-lived credentials.
     Clone(CloneArgs),
+    /// Print a shell completion script.
+    Completions {
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
     /// Manage personal access tokens.
     #[command(subcommand)]
     Tokens(TokensCommand),

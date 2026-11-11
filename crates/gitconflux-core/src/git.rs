@@ -12,6 +12,10 @@ use std::time::{Duration, Instant};
 use crate::error::{Error, Result};
 
 const MAX_CAPTURE: u64 = 8 * 1024 * 1024;
+#[cfg(windows)]
+const NULL_DEVICE: &str = "NUL";
+#[cfg(not(windows))]
+const NULL_DEVICE: &str = "/dev/null";
 const POLL: Duration = Duration::from_millis(20);
 
 /// Environment variables that could redirect git to unintended repositories or configs.
@@ -117,6 +121,10 @@ impl Git {
                 "-c",
                 "core.fsmonitor=false",
             ])
+            .args(auth.map_or_else(Vec::new, |_| {
+                // The token is in the environment: keep repository hooks from ever running.
+                vec!["-c".to_owned(), format!("core.hooksPath={NULL_DEVICE}")]
+            }))
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())

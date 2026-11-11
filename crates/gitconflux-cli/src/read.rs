@@ -43,6 +43,11 @@ pub async fn run(cmd: &Command, api: &ApiUrl, store: &CredentialStore, json: boo
         Command::Proposals(c) => proposals(&ctx, c).await,
         Command::Intake(c) => intake(&ctx, c).await,
         Command::Log(a) => log(&ctx, a).await,
+        Command::Completions { shell } => {
+            let mut cmd = <crate::cli::Cli as clap::CommandFactory>::command();
+            clap_complete::generate(*shell, &mut cmd, "gcflx", &mut std::io::stdout());
+            Ok(())
+        }
         Command::Tokens(c) => write::tokens(&ctx, c).await,
         Command::Integrate(IntegrateCommand::Preview { project }) => {
             write::preview(&ctx, project).await
