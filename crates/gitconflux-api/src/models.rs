@@ -196,3 +196,35 @@ impl std::fmt::Debug for GitCredentials {
             .finish_non_exhaustive()
     }
 }
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewEntry {
+    pub proposal_id: String,
+    pub status: String,
+    pub files: Vec<String>,
+}
+
+/// Advisory Tier 2 merge preview; not a test result and not authorization to promote.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Preview {
+    pub base_commit: Option<String>,
+    pub matrix_commit: Option<String>,
+    pub proposals: Vec<PreviewEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SyncResult {
+    pub created: Vec<String>,
+    pub updated: Vec<String>,
+    pub unchanged: Vec<String>,
+    pub skipped: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PublishResult {
+    pub status: String,
+    pub commit: Option<String>,
+    pub imported: Value,
+}

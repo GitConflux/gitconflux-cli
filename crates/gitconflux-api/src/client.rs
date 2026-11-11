@@ -11,7 +11,8 @@ use url::Url;
 use crate::error::{ApiError, sanitize};
 use crate::models::{
     Account, Agent, Catalog, ChangeProposal, Commit, GitCredentials, IntakeProposal, NewAgent,
-    NewIntake, NewProject, NewTask, Project, ProposalEvent, SubmitResult, Task, TokenRecord,
+    NewIntake, NewProject, NewTask, Preview, Project, ProposalEvent, PublishResult, SubmitResult,
+    SyncResult, Task, TokenRecord,
 };
 
 const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
@@ -155,6 +156,31 @@ impl Client {
             expires_at: raw.expires_at,
             scope: raw.scope,
         })
+    }
+
+    pub async fn integrate_preview(&self, slug: &str) -> Result<Preview, ApiError> {
+        self.post_key_whole(
+            &["v1", "projects", slug, "integrate", "preview"],
+            &serde_json::json!({}),
+        )
+        .await
+    }
+
+    pub async fn sync_tasks(&self, slug: &str, git_ref: &str) -> Result<SyncResult, ApiError> {
+        let mut url = self.url(&["v1", "projects", slug, "tasks", "sync"])?;
+        url.query_pairs_mut().append_pair("ref", git_ref);
+        let (_, bytes) = self
+            .send(Method::POST, url, Some(serde_json::json!({})))
+            .await?;
+        serde_json::from_slice(&bytes).map_err(decode)
+    }
+
+    pub async fn publish_tasks(&self, slug: &str) -> Result<PublishResult, ApiError> {
+        self.post_key_whole(
+            &["v1", "projects", slug, "tasks", "publish"],
+            &serde_json::json!({}),
+        )
+        .await
     }
 
     async fn post_key_whole<T: DeserializeOwned>(

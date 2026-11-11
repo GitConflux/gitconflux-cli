@@ -5,7 +5,8 @@ use gitconflux_core::{ApiUrl, CredentialStore};
 use serde::Serialize;
 
 use crate::cli::{
-    AgentsCommand, Command, IntakeCommand, LogArgs, ProjectsCommand, ProposalsCommand, TasksCommand,
+    AgentsCommand, Command, IntakeCommand, IntegrateCommand, LogArgs, ProjectsCommand,
+    ProposalsCommand, TasksCommand,
 };
 use crate::commands::{CliError, Result, client, optional_client, out, require_token};
 use crate::output::{table, ts_millis};
@@ -42,6 +43,10 @@ pub async fn run(cmd: &Command, api: &ApiUrl, store: &CredentialStore, json: boo
         Command::Proposals(c) => proposals(&ctx, c).await,
         Command::Intake(c) => intake(&ctx, c).await,
         Command::Log(a) => log(&ctx, a).await,
+        Command::Tokens(c) => write::tokens(&ctx, c).await,
+        Command::Integrate(IntegrateCommand::Preview { project }) => {
+            write::preview(&ctx, project).await
+        }
         Command::Clone(a) => crate::submit::clone_repo(&ctx, a).await,
         Command::Auth(_) | Command::Whoami => Ok(()),
     }
@@ -107,6 +112,8 @@ async fn tasks(ctx: &Ctx<'_>, cmd: &TasksCommand) -> Result<()> {
             out(&table(&["ID", "KEY", "STATUS", "PRIORITY", "TITLE"], &rows))
         }
         TasksCommand::Catalog { project } => json(&client.task_catalog(project).await?),
+        TasksCommand::Sync { project, git_ref } => write::sync_tasks(ctx, project, git_ref).await,
+        TasksCommand::Publish { project } => write::publish_tasks(ctx, project).await,
         TasksCommand::Create(a) => crate::write::create_task(ctx, a).await,
         TasksCommand::Claim(a) => crate::write::claim(ctx, a).await,
         TasksCommand::Release(a) => crate::write::release(ctx, a).await,
@@ -155,7 +162,15 @@ async fn proposals(ctx: &Ctx<'_>, cmd: &ProposalsCommand) -> Result<()> {
             out(&table(&["ID", "STATUS", "TASK", "UPDATED"], &rows))
         }
         ProposalsCommand::Submit(a) => crate::submit::submit(ctx, a).await,
-        ProposalsCommand::Show { project, id } => {
+        ProposalsCommand::Show {
+            project,
+            id,
+            watch,
+            watch_timeout,
+        } => {
+            if *watch {
+                return watch_proposal(ctx, &client, project, id, *watch_timeout).await;
+            }
             let (p, events) = client.get_proposal(project, id).await?;
             if ctx.json {
                 return json(&serde_json::json!({ "proposal": p, "events": events }));
@@ -230,4 +245,52 @@ async fn log(ctx: &Ctx<'_>, args: &LogArgs) -> Result<()> {
         })
         .collect();
     out(&table(&["COMMIT", "AUTHOR", "DATE", "MESSAGE"], &rows))
+}
+
+const TERMINAL_STATUSES: &[&str] = &[
+    "merged",
+    "rejected",
+    "withdrawn",
+    "tier1_failed",
+    "tier2_failed",
+    "tier2_passed",
+];
+
+/// Polls a proposal, printing each status change, until it settles or the timeout elapses.
+async fn watch_proposal(
+    ctx: &Ctx<'_>,
+    client: &gitconflux_api::Client,
+    project: &str,
+    id: &str,
+    timeout_secs: u64,
+) -> Result<()> {
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
+    let mut last = String::new();
+    loop {
+        let (p, _) = client.get_proposal(project, id).await?;
+        if p.status != last {
+            if ctx.json {
+                json(
+                    &serde_json::json!({ "id": p.id, "status": p.status, "updatedAt": p.updated_at }),
+                )?;
+            } else {
+                out(&format!(
+                    "{}  {}",
+                    ts_millis(p.updated_at),
+                    sanitize(&p.status)
+                ))?;
+            }
+            last.clone_from(&p.status);
+        }
+        if TERMINAL_STATUSES.contains(&p.status.as_str()) {
+            return Ok(());
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err(CliError::Usage(format!(
+                "still `{}` after {timeout_secs}s; stopped watching",
+                sanitize(&p.status)
+            )));
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    }
 }

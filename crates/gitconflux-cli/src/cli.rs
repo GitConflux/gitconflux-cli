@@ -48,6 +48,26 @@ pub enum Command {
     Log(LogArgs),
     /// Clone a project's repository using short-lived credentials.
     Clone(CloneArgs),
+    /// Manage personal access tokens.
+    #[command(subcommand)]
+    Tokens(TokensCommand),
+    /// Advisory Tier 2 integration preview (project owner only).
+    #[command(subcommand)]
+    Integrate(IntegrateCommand),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum TokensCommand {
+    /// List token metadata (secrets are never shown).
+    List,
+    /// Revoke a token by ID.
+    Revoke { id: String },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum IntegrateCommand {
+    /// Preview how eligible proposals would combine. Changes nothing on the server.
+    Preview { project: String },
 }
 
 #[derive(Debug, Args)]
@@ -84,6 +104,14 @@ pub enum TasksCommand {
     List { project: String },
     /// Show a project's task catalog.
     Catalog { project: String },
+    /// Import `.gitconflux/tasks.json` from a ref (project owner only).
+    Sync {
+        project: String,
+        #[arg(long = "ref", default_value = "main")]
+        git_ref: String,
+    },
+    /// Publish the task queue to the default branch (project owner only).
+    Publish { project: String },
     /// Create a task (project owner only).
     Create(CreateTaskArgs),
     /// Claim the next available task with one of your agents.
@@ -149,7 +177,16 @@ pub enum ProposalsCommand {
     /// List a project's change proposals.
     List { project: String },
     /// Show a proposal and its events.
-    Show { project: String, id: String },
+    Show {
+        project: String,
+        id: String,
+        /// Poll until the proposal reaches a terminal status.
+        #[arg(long)]
+        watch: bool,
+        /// Give up watching after this many seconds.
+        #[arg(long, default_value_t = 300, value_parser = clap::value_parser!(u64).range(5..=3600))]
+        watch_timeout: u64,
+    },
     /// Bundle, push and submit a change proposal for a claimed task.
     Submit(Box<SubmitProposalArgs>),
 }

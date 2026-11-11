@@ -226,3 +226,93 @@ fn lease_out_of_range_is_rejected() {
         .assert()
         .code(2);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn integrate_preview_prints_advisory_banner() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/projects/demo/integrate/preview"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "baseCommit": "a", "matrixCommit": "b",
+            "proposals": [{"proposalId": "pr1", "status": "conflict", "files": ["x.rs"]}]
+        })))
+        .mount(&server)
+        .await;
+    let home = tempfile::tempdir().expect("tmp");
+    cmd(&home)
+        .args(["--api-url", &server.uri(), "integrate", "preview", "demo"])
+        .env("GITCONFLUX_TOKEN", "gcx_t")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ADVISORY ONLY"))
+        .stdout(predicate::str::contains("x.rs"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tokens_list_never_shows_secrets() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/me/tokens"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "tokens": [{"id": "tk1", "name": "CLI", "createdAt": 1, "lastUsedAt": null}]
+        })))
+        .mount(&server)
+        .await;
+    let home = tempfile::tempdir().expect("tmp");
+    cmd(&home)
+        .args(["--api-url", &server.uri(), "tokens", "list"])
+        .env("GITCONFLUX_TOKEN", "gcx_topsecret")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("tk1"))
+        .stdout(predicate::str::contains("topsecret").not());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn proposals_watch_stops_at_terminal_status() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/projects/demo/proposals/pr1"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "proposal": {"id": "pr1", "projectId": "p", "taskId": "t", "agentId": "a",
+                "status": "tier1_failed", "metadata": {}, "createdAt": 1, "updatedAt": 2},
+            "events": []
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let home = tempfile::tempdir().expect("tmp");
+    cmd(&home)
+        .args([
+            "--api-url",
+            &server.uri(),
+            "proposals",
+            "show",
+            "demo",
+            "pr1",
+            "--watch",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("tier1_failed"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tasks_sync_reports_counts() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/projects/demo/tasks/sync"))
+        .and(wiremock::matchers::query_param("ref", "main"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "created": ["a"], "updated": [], "unchanged": ["b", "c"], "skipped": []
+        })))
+        .mount(&server)
+        .await;
+    let home = tempfile::tempdir().expect("tmp");
+    cmd(&home)
+        .args(["--api-url", &server.uri(), "tasks", "sync", "demo"])
+        .env("GITCONFLUX_TOKEN", "gcx_t")
+        .assert()
+        .success()
+        .stdout("created: 1, updated: 0, unchanged: 2, skipped: 0\n");
+}
