@@ -9,8 +9,16 @@ publish.workspace = true
 
 [dependencies]
 gitconflux-core = { path = "../gitconflux-core" }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde.workspace = true
 serde_json.workspace = true
+thiserror = "2"
+tokio = { version = "1", features = ["rt", "macros", "time"] }
+url = "2"
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "macros", "time"] }
+wiremock = "0.6.5"
