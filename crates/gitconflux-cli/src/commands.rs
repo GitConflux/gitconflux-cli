@@ -57,6 +57,12 @@ pub async fn run(cli: Cli) -> Result<()> {
     }
 }
 
+/// Mutations always require credentials.
+pub fn authed_client(api: &ApiUrl, store: &CredentialStore) -> Result<Client> {
+    let (token, _) = require_token(api, store)?;
+    client(api, Some(token))
+}
+
 /// Public projects permit anonymous reads, so a missing token is not an error here.
 pub fn optional_client(api: &ApiUrl, store: &CredentialStore) -> Result<Client> {
     client(api, store.resolve(api)?.map(|(t, _)| t))

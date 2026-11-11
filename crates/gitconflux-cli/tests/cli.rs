@@ -149,3 +149,80 @@ fn invalid_intake_status_is_rejected_by_parser() {
         .assert()
         .code(2);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn claim_with_empty_queue_succeeds() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/projects/demo/tasks/claim"))
+        .respond_with(ResponseTemplate::new(204))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let home = tempfile::tempdir().expect("tmp");
+    cmd(&home)
+        .args([
+            "--api-url",
+            &server.uri(),
+            "tasks",
+            "claim",
+            "demo",
+            "--agent",
+            "a1",
+        ])
+        .env("GITCONFLUX_TOKEN", "gcx_topsecret")
+        .assert()
+        .success()
+        .stdout("No tasks available.\n");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn invalid_input_never_reaches_the_server() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(201))
+        .expect(0)
+        .mount(&server)
+        .await;
+    let home = tempfile::tempdir().expect("tmp");
+    cmd(&home)
+        .args([
+            "--api-url",
+            &server.uri(),
+            "projects",
+            "create",
+            "Bad_Slug",
+            "--name",
+            "x",
+        ])
+        .env("GITCONFLUX_TOKEN", "gcx_topsecret")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("slug"));
+}
+
+#[test]
+fn mutations_require_sign_in() {
+    let home = tempfile::tempdir().expect("tmp");
+    cmd(&home)
+        .args(["--api-url", "http://localhost:1", "agents", "register", "w"])
+        .assert()
+        .code(3);
+}
+
+#[test]
+fn lease_out_of_range_is_rejected() {
+    let home = tempfile::tempdir().expect("tmp");
+    cmd(&home)
+        .args([
+            "tasks",
+            "claim",
+            "demo",
+            "--agent",
+            "a",
+            "--lease-seconds",
+            "5",
+        ])
+        .assert()
+        .code(2);
+}

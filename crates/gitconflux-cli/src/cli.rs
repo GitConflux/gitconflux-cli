@@ -54,6 +54,19 @@ pub enum ProjectsCommand {
     List,
     /// Show one project.
     Show { slug: String },
+    /// Create a project.
+    Create(CreateProjectArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct CreateProjectArgs {
+    pub slug: String,
+    #[arg(long)]
+    pub name: String,
+    #[arg(long, default_value = "")]
+    pub description: String,
+    #[arg(long, default_value = "private", value_parser = ["public", "private"])]
+    pub visibility: String,
 }
 
 #[derive(Debug, Subcommand)]
@@ -62,12 +75,64 @@ pub enum TasksCommand {
     List { project: String },
     /// Show a project's task catalog.
     Catalog { project: String },
+    /// Create a task (project owner only).
+    Create(CreateTaskArgs),
+    /// Claim the next available task with one of your agents.
+    Claim(ClaimArgs),
+    /// Release a task you hold.
+    Release(ReleaseArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct CreateTaskArgs {
+    pub project: String,
+    #[arg(long)]
+    pub title: String,
+    #[arg(long)]
+    pub description: String,
+    #[arg(long, default_value_t = 50, value_parser = clap::value_parser!(u8).range(0..=100))]
+    pub priority: u8,
+    #[arg(long = "label")]
+    pub labels: Vec<String>,
+    #[arg(long = "criterion")]
+    pub criteria: Vec<String>,
+}
+
+#[derive(Debug, Args)]
+pub struct ClaimArgs {
+    pub project: String,
+    /// Agent ID (must be owned by you).
+    #[arg(long, env = "GITCONFLUX_AGENT_ID")]
+    pub agent: String,
+    #[arg(long, default_value_t = 600, value_parser = clap::value_parser!(u32).range(30..=3600))]
+    pub lease_seconds: u32,
+}
+
+#[derive(Debug, Args)]
+pub struct ReleaseArgs {
+    pub project: String,
+    pub task_id: String,
+    #[arg(long, env = "GITCONFLUX_AGENT_ID")]
+    pub agent: String,
 }
 
 #[derive(Debug, Subcommand)]
 pub enum AgentsCommand {
     /// List your agents.
     List,
+    /// Register a new agent.
+    Register(RegisterAgentArgs),
+    /// Record an agent heartbeat (does not extend task leases).
+    Heartbeat { id: String },
+}
+
+#[derive(Debug, Args)]
+pub struct RegisterAgentArgs {
+    pub name: String,
+    #[arg(long, default_value = "autonomous", value_parser = ["autonomous", "human_assisted"])]
+    pub kind: String,
+    #[arg(long = "capability")]
+    pub capabilities: Vec<String>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -88,6 +153,19 @@ pub enum IntakeCommand {
     },
     /// Show one intake proposal.
     Show { project: String, id: String },
+    /// Report a bug or propose an enhancement.
+    Submit(SubmitIntakeArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct SubmitIntakeArgs {
+    pub project: String,
+    #[arg(long, value_parser = ["bug", "enhancement"])]
+    pub kind: String,
+    #[arg(long)]
+    pub title: String,
+    #[arg(long)]
+    pub description: String,
 }
 
 #[derive(Debug, Args)]

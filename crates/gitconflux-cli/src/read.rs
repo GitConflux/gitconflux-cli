@@ -9,14 +9,15 @@ use crate::cli::{
 };
 use crate::commands::{CliError, Result, client, optional_client, out, require_token};
 use crate::output::{table, ts_millis};
+use crate::write;
 
-struct Ctx<'a> {
-    api: &'a ApiUrl,
-    store: &'a CredentialStore,
-    json: bool,
+pub struct Ctx<'a> {
+    pub api: &'a ApiUrl,
+    pub store: &'a CredentialStore,
+    pub json: bool,
 }
 
-fn json<T: Serialize>(value: &T) -> Result<()> {
+pub fn json<T: Serialize>(value: &T) -> Result<()> {
     let s = serde_json::to_string_pretty(value)
         .map_err(|e| CliError::Core(gitconflux_core::Error::Io(e.to_string())))?;
     out(&s)
@@ -26,7 +27,7 @@ fn opt(v: Option<&str>) -> String {
     v.unwrap_or("-").to_owned()
 }
 
-fn field(label: &str, value: &str) -> Result<()> {
+pub fn field(label: &str, value: &str) -> Result<()> {
     out(&format!("{label:<12} {}", sanitize(value)))
 }
 
@@ -36,6 +37,8 @@ pub async fn run(cmd: &Command, api: &ApiUrl, store: &CredentialStore, json: boo
         Command::Projects(c) => projects(&ctx, c).await,
         Command::Tasks(c) => tasks(&ctx, c).await,
         Command::Agents(AgentsCommand::List) => agents(&ctx).await,
+        Command::Agents(AgentsCommand::Register(a)) => write::register_agent(&ctx, a).await,
+        Command::Agents(AgentsCommand::Heartbeat { id }) => write::heartbeat(&ctx, id).await,
         Command::Proposals(c) => proposals(&ctx, c).await,
         Command::Intake(c) => intake(&ctx, c).await,
         Command::Log(a) => log(&ctx, a).await,
@@ -76,6 +79,7 @@ async fn projects(ctx: &Ctx<'_>, cmd: &ProjectsCommand) -> Result<()> {
             field("Created:", &ts_millis(p.created_at))?;
             field("Description:", &p.description)
         }
+        ProjectsCommand::Create(a) => crate::write::create_project(ctx, a).await,
     }
 }
 
@@ -102,6 +106,9 @@ async fn tasks(ctx: &Ctx<'_>, cmd: &TasksCommand) -> Result<()> {
             out(&table(&["ID", "KEY", "STATUS", "PRIORITY", "TITLE"], &rows))
         }
         TasksCommand::Catalog { project } => json(&client.task_catalog(project).await?),
+        TasksCommand::Create(a) => crate::write::create_task(ctx, a).await,
+        TasksCommand::Claim(a) => crate::write::claim(ctx, a).await,
+        TasksCommand::Release(a) => crate::write::release(ctx, a).await,
     }
 }
 
@@ -191,6 +198,7 @@ async fn intake(ctx: &Ctx<'_>, cmd: &IntakeCommand) -> Result<()> {
             out(&table(&["ID", "KIND", "STATUS", "TITLE"], &rows))
         }
         IntakeCommand::Show { project, id } => json(&client.get_intake(project, id).await?),
+        IntakeCommand::Submit(a) => crate::write::submit_intake(ctx, a).await,
     }
 }
 

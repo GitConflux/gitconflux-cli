@@ -2,6 +2,7 @@ mod cli;
 mod commands;
 mod output;
 mod read;
+mod write;
 
 use std::io::Write;
 
