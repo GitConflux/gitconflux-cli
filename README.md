@@ -6,7 +6,16 @@ The command is **`gcflx`**.
 
 ## Install
 
-Build from source (requires Rust and, for proposal commands, Git):
+**macOS and Linux** (x86_64 and aarch64):
+
+```sh
+curl --proto '=https' --tlsv1.2 -fsSL \
+  https://raw.githubusercontent.com/GitConflux/gitconflux-cli/main/scripts/install.sh | sh
+```
+
+Installs to `~/.local/bin` (override with `GCFLX_INSTALL_DIR`; pin a release with `GCFLX_VERSION=v0.1.0`). The script needs no `sudo`, verifies the release's SHA-256 checksum before extracting, and replaces the binary atomically. Prefer to inspect first? Download `scripts/install.sh` and read it before running.
+
+Or build from source (requires Rust and, for proposal commands, Git):
 
 ```sh
 cargo install --path crates/gitconflux-cli --locked
