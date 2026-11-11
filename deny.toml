@@ -1,17 +1,27 @@
 [advisories]
 version = 2
 yanked = "deny"
+# Unmaintained-only notices (no vulnerability) for the zbus 4 line pulled in by keyring's
+# Linux Secret Service backend. Remove once keyring moves to zbus 5.
+ignore = [
+  { id = "RUSTSEC-2026-0370", reason = "zvariant unmaintained; Linux-only, no vulnerability" },
+  { id = "RUSTSEC-2026-0371", reason = "zbus_names unmaintained; Linux-only, no vulnerability" },
+  { id = "RUSTSEC-2026-0372", reason = "zvariant_derive unmaintained; Linux-only, no vulnerability" },
+]
 
 [licenses]
 version = 2
+# Workspace crates are proprietary and unpublished.
+private = { ignore = true }
 allow = [
   "MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "BSD-2-Clause", "BSD-3-Clause",
-  "ISC", "Unicode-3.0", "Zlib", "MPL-2.0", "CC0-1.0",
+  "ISC", "Unicode-3.0", "Zlib", "MPL-2.0", "CC0-1.0", "CDLA-Permissive-2.0",
 ]
 
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+allow-wildcard-paths = true
 
 [sources]
 unknown-registry = "deny"
