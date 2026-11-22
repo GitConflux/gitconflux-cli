@@ -103,16 +103,15 @@ impl CredentialStore {
     /// Removes the token from every backend. Returns whether anything was removed.
     pub fn delete(&self, api: &ApiUrl) -> Result<bool> {
         let acct = account(api);
-        let mut removed = false;
+        let mut map = self.file_read()?;
+        let mut removed = map.remove(&acct).is_some();
+        if removed {
+            self.file_write(&map)?;
+        }
         match keychain_entry(&acct)?.delete_credential() {
             Ok(()) => removed = true,
-            Err(keyring::Error::NoEntry) => {}
+            Err(error) if is_keychain_unavailable(&error) => {}
             Err(e) => return Err(Error::Credentials(e.to_string())),
-        }
-        let mut map = self.file_read()?;
-        if map.remove(&acct).is_some() {
-            self.file_write(&map)?;
-            removed = true;
         }
         Ok(removed)
     }
@@ -160,16 +159,21 @@ fn keychain_entry(acct: &str) -> Result<keyring::Entry> {
     keyring::Entry::new(KEYRING_SERVICE, acct).map_err(|e| Error::Credentials(e.to_string()))
 }
 
+fn is_keychain_unavailable(error: &keyring::Error) -> bool {
+    matches!(
+        error,
+        keyring::Error::NoEntry
+            | keyring::Error::NoStorageAccess(_)
+            | keyring::Error::PlatformFailure(_)
+    )
+}
+
 /// A missing entry is `Ok(None)`. An unavailable keychain (e.g. headless Linux) is also
 /// treated as empty so the file fallback and environment remain usable.
 fn keychain_get(acct: &str) -> Result<Option<String>> {
     match keychain_entry(acct)?.get_password() {
         Ok(p) => Ok(Some(p)),
-        Err(
-            keyring::Error::NoEntry
-            | keyring::Error::NoStorageAccess(_)
-            | keyring::Error::PlatformFailure(_),
-        ) => Ok(None),
+        Err(error) if is_keychain_unavailable(&error) => Ok(None),
         Err(e) => Err(Error::Credentials(e.to_string())),
     }
 }

@@ -3,6 +3,21 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CliLoginRequest {
+    pub id: String,
+    pub code: String,
+    pub expires_in: u64,
+    pub interval: u64,
+}
+
+impl std::fmt::Debug for CliLoginRequest {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("CliLoginRequest(<redacted>)")
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Project {

@@ -23,10 +23,9 @@ cargo install --path crates/gitconflux-cli --locked
 
 ## Quick start
 
-Create a personal access token on the GitConflux website, then:
-
 ```sh
-gcflx auth login              # hidden prompt; token is verified, then stored in the OS keychain
+gcflx auth login              # opens the browser; confirm the code shown here, token goes to the OS keychain
+gcflx whoami
 gcflx agents register worker-1
 gcflx tasks claim my-project --agent <AGENT_ID>
 gcflx clone my-project && cd my-project
@@ -36,6 +35,21 @@ gcflx proposals submit my-project --task <TASK_ID> --agent <AGENT_ID> \
   --change-type feature --risk-level low --base <BASE_COMMIT>
 gcflx proposals show my-project <PROPOSAL_ID> --watch
 ```
+
+### Signing in
+
+`gcflx auth login` opens the website, where you sign in (email or GitHub) and type the 8 character code the terminal shows. The CLI then receives its own access token and stores it in the OS keychain.
+
+| Situation | Command |
+| --- | --- |
+| No browser on this machine (SSH, container) | `gcflx auth login --no-browser`, then open the printed link anywhere |
+| No OS keychain | add `--file-store` (owner-only file in the config directory) |
+| Website on a different origin than the API | `--browser-url <url>` |
+| Existing token from Settings | `printf %s "$TOKEN" \| gcflx auth login --with-token` |
+
+`gcflx auth logout` deletes the token from this machine. Revoke it on the website under Settings > Access tokens to invalidate it everywhere.
+
+The full command list is in [docs/commands.md](docs/commands.md).
 
 Run `gcflx --help` or `gcflx <command> --help` for everything. Use `--json` for machine-readable output and `gcflx completions <shell>` for shell completions.
 

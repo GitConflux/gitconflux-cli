@@ -278,7 +278,7 @@ pub struct LogArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum AuthCommand {
-    /// Store a personal access token (create one on the `GitConflux` website).
+    /// Sign in through the browser or store an existing personal access token.
     Login(LoginArgs),
     /// Remove the stored token.
     Logout,
@@ -288,9 +288,15 @@ pub enum AuthCommand {
 
 #[derive(Debug, Args)]
 pub struct LoginArgs {
-    /// Read the token from standard input instead of prompting.
-    #[arg(long)]
+    /// Read a personal access token from standard input instead of opening a browser.
+    #[arg(long, conflicts_with_all = ["no_browser", "browser_url"])]
     pub with_token: bool,
+    /// Print the approval link without opening a browser.
+    #[arg(long)]
+    pub no_browser: bool,
+    /// `GitConflux` website URL if it differs from the API origin.
+    #[arg(long)]
+    pub browser_url: Option<String>,
     /// Store in an owner-only file instead of the OS keychain.
     #[arg(long)]
     pub file_store: bool,

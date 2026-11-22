@@ -10,9 +10,9 @@ use url::Url;
 
 use crate::error::{ApiError, sanitize};
 use crate::models::{
-    Account, Agent, Catalog, ChangeProposal, Commit, GitCredentials, IntakeProposal, NewAgent,
-    NewIntake, NewProject, NewTask, Preview, Project, ProposalEvent, PublishResult, SubmitResult,
-    SyncResult, Task, TokenRecord,
+    Account, Agent, Catalog, ChangeProposal, CliLoginRequest, Commit, GitCredentials,
+    IntakeProposal, NewAgent, NewIntake, NewProject, NewTask, Preview, Project, ProposalEvent,
+    PublishResult, SubmitResult, SyncResult, Task, TokenRecord,
 };
 
 const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
@@ -275,6 +275,41 @@ impl Client {
         let url = self.url(&["v1", "me"])?;
         let (_, bytes) = self.send(Method::GET, url, None).await?;
         serde_json::from_slice(&bytes).map_err(decode)
+    }
+
+    pub async fn start_cli_login(&self, challenge: &str) -> Result<CliLoginRequest, ApiError> {
+        self.post_key_whole(
+            &["v1", "cli-login", "start"],
+            &serde_json::json!({ "challenge": challenge }),
+        )
+        .await
+    }
+
+    pub async fn exchange_cli_login(
+        &self,
+        id: &str,
+        verifier: &Token,
+    ) -> Result<Option<Token>, ApiError> {
+        let url = self.url(&["v1", "cli-login", id, "exchange"])?;
+        let body = serde_json::json!({ "verifier": verifier.expose() });
+        let (status, bytes) = self.send_once(&Method::POST, &url, Some(&body)).await?;
+        if status == StatusCode::ACCEPTED {
+            return Ok(None);
+        }
+        if status != StatusCode::OK {
+            return Err(http_error(status, &[]));
+        }
+        let raw: String = extract(&bytes, "token").map_err(|_| {
+            ApiError::Decode("server returned an invalid CLI token response".into())
+        })?;
+        if !raw.starts_with("gcx_") {
+            return Err(ApiError::Decode(
+                "server returned an invalid CLI token".into(),
+            ));
+        }
+        Token::new(&raw)
+            .map(Some)
+            .map_err(|_| ApiError::Decode("server returned an invalid CLI token".into()))
     }
 
     pub async fn list_tokens(&self) -> Result<Vec<TokenRecord>, ApiError> {

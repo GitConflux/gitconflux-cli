@@ -1,4 +1,5 @@
 mod askpass;
+mod browser_login;
 mod cli;
 mod commands;
 mod output;

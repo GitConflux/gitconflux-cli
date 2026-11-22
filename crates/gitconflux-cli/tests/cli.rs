@@ -2,6 +2,7 @@
 
 use assert_cmd::Command;
 use predicates::prelude::*;
+use sha2::{Digest, Sha256};
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -115,6 +116,67 @@ async fn login_with_token_verifies_before_storing() {
     assert!(
         !home.path().join("gcflx").exists(),
         "nothing may be stored on failure"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn browser_login_exchanges_the_matching_proof_and_saves_the_token() {
+    let server = me_server().await;
+    let home = tempfile::tempdir().expect("tmp");
+    let id = "91632acd-812f-4ac4-813e-cf5aeae2c1c4";
+    let exchange = format!("/v1/cli-login/{id}/exchange");
+    Mock::given(method("POST"))
+        .and(path("/v1/cli-login/start"))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+            "id": id, "code": "005cfe12", "interval": 1, "expiresIn": 5
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path(&exchange))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "token": "gcx_topsecret"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    cmd(&home)
+        .args([
+            "--api-url",
+            &server.uri(),
+            "auth",
+            "login",
+            "--no-browser",
+            "--file-store",
+        ])
+        .assert()
+        .success()
+        .stdout("Signed in as alice\n")
+        .stderr(predicate::str::contains(format!("/auth/cli/{id}")))
+        .stderr(predicate::str::contains("005cfe12"))
+        .stderr(predicate::str::contains("topsecret").not());
+    cmd(&home)
+        .args(["--api-url", &server.uri(), "whoami"])
+        .assert()
+        .success()
+        .stdout("alice\n");
+
+    let requests = server.received_requests().await.expect("recorded requests");
+    let input = |route: &str| {
+        let request = requests
+            .iter()
+            .find(|request| request.url.path() == route)
+            .expect("request");
+        serde_json::from_slice::<serde_json::Value>(&request.body).expect("request JSON")
+    };
+    let start = input("/v1/cli-login/start");
+    let redeem = input(&exchange);
+    let verifier = redeem["verifier"].as_str().expect("proof");
+    assert_eq!(verifier.len(), 64);
+    assert_eq!(
+        start["challenge"],
+        hex::encode(Sha256::digest(verifier.as_bytes()))
     );
 }
 

@@ -1,6 +1,6 @@
 //! Command implementations.
 
-use std::io::{IsTerminal, Read, Write};
+use std::io::{Read, Write};
 
 use gitconflux_api::{ApiError, Client, ClientOptions, sanitize};
 use gitconflux_core::{ApiUrl, Backend, CredentialStore, Error as CoreError, ExitCode, Token};
@@ -52,7 +52,7 @@ pub async fn run(cli: Cli) -> Result<()> {
     let api = api_url(&cli)?;
     let store = CredentialStore::new()?;
     match &cli.command {
-        Command::Auth(AuthCommand::Login(args)) => login(&api, &store, args).await,
+        Command::Auth(AuthCommand::Login(args)) => login(&api, &store, args, cli.json).await,
         Command::Auth(AuthCommand::Logout) => logout(&api, &store),
         Command::Auth(AuthCommand::Status) => status(&api, &store, cli.json).await,
         Command::Whoami => whoami(&api, &store, cli.json).await,
@@ -71,31 +71,25 @@ pub fn optional_client(api: &ApiUrl, store: &CredentialStore) -> Result<Client> 
     client(api, store.resolve(api)?.map(|(t, _)| t))
 }
 
-fn read_token(args: &LoginArgs) -> Result<Token> {
-    let raw = if args.with_token {
-        let mut buf = String::new();
-        std::io::stdin()
-            .take(MAX_STDIN_TOKEN_BYTES)
-            .read_to_string(&mut buf)
-            .map_err(|e| CliError::Core(CoreError::Io(e.to_string())))?;
-        buf
-    } else if std::io::stdin().is_terminal() {
-        rpassword::prompt_password("Personal access token: ")
-            .map_err(|e| CliError::Core(CoreError::Io(e.to_string())))?
-    } else {
-        return Err(CliError::Usage(
-            "stdin is not a terminal; pass --with-token and pipe the token in".into(),
-        ));
-    };
-    Ok(Token::new(&raw)?)
+fn read_token() -> Result<Token> {
+    let mut buf = String::new();
+    std::io::stdin()
+        .take(MAX_STDIN_TOKEN_BYTES)
+        .read_to_string(&mut buf)
+        .map_err(|e| CliError::Core(CoreError::Io(e.to_string())))?;
+    Ok(Token::new(&buf)?)
 }
 
 pub fn client(api: &ApiUrl, token: Option<Token>) -> Result<Client> {
     Ok(Client::new(api.clone(), token, &ClientOptions::default())?)
 }
 
-async fn login(api: &ApiUrl, store: &CredentialStore, args: &LoginArgs) -> Result<()> {
-    let token = read_token(args)?;
+async fn login(api: &ApiUrl, store: &CredentialStore, args: &LoginArgs, json: bool) -> Result<()> {
+    let token = if args.with_token {
+        read_token()?
+    } else {
+        crate::browser_login::login(api, args).await?
+    };
     // Verify before persisting so a typo never overwrites a working credential.
     let verifier = Token::new(token.expose())?;
     let account = client(api, Some(verifier))?.me().await?;
@@ -105,7 +99,11 @@ async fn login(api: &ApiUrl, store: &CredentialStore, args: &LoginArgs) -> Resul
         Backend::Keychain
     };
     store.save(api, &token, backend)?;
-    out(&format!("Signed in as {}", sanitize(&account.handle)))
+    let handle = sanitize(&account.handle);
+    if json {
+        return out(&serde_json::json!({ "handle": handle }).to_string());
+    }
+    out(&format!("Signed in as {handle}"))
 }
 
 fn logout(api: &ApiUrl, store: &CredentialStore) -> Result<()> {
