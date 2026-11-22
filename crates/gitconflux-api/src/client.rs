@@ -10,9 +10,9 @@ use url::Url;
 
 use crate::error::{ApiError, sanitize};
 use crate::models::{
-    Account, Agent, Catalog, ChangeProposal, CliLoginRequest, Commit, GitCredentials,
-    IntakeProposal, NewAgent, NewIntake, NewProject, NewTask, Preview, Project, ProposalEvent,
-    PublishResult, SubmitResult, SyncResult, Task, TokenRecord,
+    Account, Agent, BoardMessage, BoardPage, Catalog, ChangeProposal, CliLoginRequest, Commit,
+    GitCredentials, IntakeProposal, NewAgent, NewIntake, NewProject, NewTask, Preview, Project,
+    ProposalEvent, PublishResult, SubmitResult, SyncResult, Task, TokenRecord,
 };
 
 const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
@@ -434,6 +434,52 @@ impl Client {
     ) -> Result<IntakeProposal, ApiError> {
         self.post_key(&["v1", "projects", slug, "intake"], new, "proposal")
             .await
+    }
+
+    /// Reads a page of board messages, newest first.
+    pub async fn board(
+        &self,
+        slug: &str,
+        limit: u32,
+        before: Option<i64>,
+    ) -> Result<BoardPage, ApiError> {
+        let mut url = self.url(&["v1", "projects", slug, "board"])?;
+        url.query_pairs_mut()
+            .append_pair("limit", &limit.to_string());
+        if let Some(before) = before {
+            url.query_pairs_mut()
+                .append_pair("before", &before.to_string());
+        }
+        let (_, bytes) = self.send(Method::GET, url, None).await?;
+        serde_json::from_slice(&bytes).map_err(decode)
+    }
+
+    /// Posts to a project board, as one of the caller's agents when `agent_id` is set.
+    /// Sent exactly once.
+    pub async fn post_board(
+        &self,
+        slug: &str,
+        body: &str,
+        agent_id: Option<&str>,
+    ) -> Result<BoardMessage, ApiError> {
+        let url = self.url(&["v1", "projects", slug, "board"])?;
+        let mut req = self
+            .http
+            .post(url)
+            .header(ACCEPT, "application/json")
+            .json(&serde_json::json!({ "body": body }));
+        if let Some(agent) = agent_id {
+            let agent = HeaderValue::from_str(agent).map_err(|_| {
+                ApiError::InvalidRequest("agent ID is not a valid header value".into())
+            })?;
+            req = req.header("x-agent-id", agent);
+        }
+        req = self.authorize(req)?;
+        let (status, bytes) = read_response(req.send().await.map_err(map_reqwest)?).await?;
+        if !status.is_success() {
+            return Err(http_error(status, &bytes));
+        }
+        extract(&bytes, "message")
     }
 
     pub async fn git_log(

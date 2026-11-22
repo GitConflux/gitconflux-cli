@@ -378,3 +378,111 @@ async fn tasks_sync_reports_counts() {
         .success()
         .stdout("created: 1, updated: 0, unchanged: 2, skipped: 0\n");
 }
+
+fn board_page() -> serde_json::Value {
+    serde_json::json!({
+        "members": [
+            { "type": "user", "id": "u1", "name": "alice", "mention": "alice", "ownerHandle": null },
+            { "type": "agent", "id": "agt_1", "name": "Build Bot", "mention": "build-bot", "ownerHandle": "bob" }
+        ],
+        "messages": [
+            { "id": "m2", "author": { "type": "agent", "id": "agt_1", "name": "Build Bot", "mention": "build-bot", "ownerHandle": "bob" },
+              "body": "Done, @alice\nsee the proposal", "mentions": [{ "type": "user", "id": "u1", "name": "alice" }], "createdAt": 2000 },
+            { "id": "m1", "author": { "type": "user", "id": "u1", "name": "alice", "mention": "alice", "ownerHandle": null },
+              "body": "\u{1b}[31mhello", "mentions": [], "createdAt": 1000 }
+        ]
+    })
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn board_post_checks_tags_and_sends_agent_header() {
+    let server = me_server().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/projects/demo/board"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(board_page()))
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/projects/demo/board"))
+        .and(header("x-agent-id", "agt_1"))
+        .and(wiremock::matchers::body_json(serde_json::json!({ "body": "@alice ready for review" })))
+        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+            "message": { "id": "m3", "author": { "type": "agent", "id": "agt_1", "name": "Build Bot", "mention": "build-bot", "ownerHandle": "bob" },
+                "body": "@alice ready for review", "mentions": [{ "type": "user", "id": "u1", "name": "alice" }], "createdAt": 3000 }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let home = tempfile::tempdir().expect("tmp");
+    cmd(&home)
+        .args([
+            "--api-url",
+            &server.uri(),
+            "board",
+            "post",
+            "demo",
+            "ready",
+            "for",
+            "review",
+            "--tag",
+            "@alice",
+            "--agent",
+            "agt_1",
+        ])
+        .env("GITCONFLUX_TOKEN", "gcx_topsecret")
+        .assert()
+        .success()
+        .stdout("Posted as Build Bot (agent of @bob), tagging @alice\n");
+    cmd(&home)
+        .args([
+            "--api-url",
+            &server.uri(),
+            "board",
+            "post",
+            "demo",
+            "hi",
+            "--tag",
+            "ghost",
+        ])
+        .env("GITCONFLUX_TOKEN", "gcx_topsecret")
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("not on this board"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn board_read_prints_oldest_first_and_filters_mentions() {
+    let server = me_server().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/projects/demo/board"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(board_page()))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/agents"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "agents": [] })))
+        .mount(&server)
+        .await;
+    let home = tempfile::tempdir().expect("tmp");
+    cmd(&home)
+        .args(["--api-url", &server.uri(), "board", "read", "demo"])
+        .env("GITCONFLUX_TOKEN", "gcx_topsecret")
+        .assert()
+        .success()
+        .stdout(predicate::str::is_match("(?s)@alice\n    \\[31mhello\n.*Build Bot \\(agent of @bob\\)  \\[tags you\\]\n    Done, @alice\n    see the proposal\n$").expect("regex"))
+        .stdout(predicate::str::contains("\u{1b}").not());
+    cmd(&home)
+        .args([
+            "--api-url",
+            &server.uri(),
+            "board",
+            "read",
+            "demo",
+            "--mentions",
+        ])
+        .env("GITCONFLUX_TOKEN", "gcx_topsecret")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("hello").not())
+        .stdout(predicate::str::contains("Done, @alice"));
+}

@@ -53,6 +53,7 @@ pub async fn run(cmd: &Command, api: &ApiUrl, store: &CredentialStore, json: boo
             write::preview(&ctx, project).await
         }
         Command::Clone(a) => crate::submit::clone_repo(&ctx, a).await,
+        Command::Board(c) => crate::board::run(&ctx, c).await,
         Command::Auth(_) | Command::Whoami => Ok(()),
     }
 }

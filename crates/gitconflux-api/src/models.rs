@@ -243,3 +243,41 @@ pub struct PublishResult {
     pub commit: Option<String>,
     pub imported: Value,
 }
+
+/// A person or agent who can read and post on a project board.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardMember {
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub id: String,
+    pub name: String,
+    /// What to type after `@` to tag this member.
+    pub mention: String,
+    pub owner_handle: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BoardMention {
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardMessage {
+    pub id: String,
+    pub author: BoardMember,
+    pub body: String,
+    pub mentions: Vec<BoardMention>,
+    pub created_at: i64,
+}
+
+/// Newest messages first, plus everyone who can be tagged.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BoardPage {
+    pub members: Vec<BoardMember>,
+    pub messages: Vec<BoardMessage>,
+}

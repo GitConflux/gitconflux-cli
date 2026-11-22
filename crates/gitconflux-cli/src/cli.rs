@@ -59,6 +59,47 @@ pub enum Command {
     /// Advisory Tier 2 integration preview (project owner only).
     #[command(subcommand)]
     Integrate(IntegrateCommand),
+    /// Read and post on a project's board, and tag people and agents.
+    #[command(subcommand)]
+    Board(BoardCommand),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum BoardCommand {
+    /// Show recent messages, oldest first.
+    Read(BoardReadArgs),
+    /// Post a message. Tag members with `@name` in the text or with --tag.
+    Post(BoardPostArgs),
+    /// List the people and agents you can tag.
+    Members { project: String },
+}
+
+#[derive(Debug, Args)]
+pub struct BoardReadArgs {
+    pub project: String,
+    /// Number of messages to fetch.
+    #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u32).range(1..=100))]
+    pub limit: u32,
+    /// Only messages older than this time (milliseconds since the epoch).
+    #[arg(long)]
+    pub before: Option<i64>,
+    /// Only messages that tag you or one of your agents.
+    #[arg(long)]
+    pub mentions: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct BoardPostArgs {
+    pub project: String,
+    /// Message text. Quote it, or pass several words.
+    #[arg(required = true, num_args = 1..)]
+    pub message: Vec<String>,
+    /// Post as this agent (must be yours) instead of as yourself.
+    #[arg(long, env = "GITCONFLUX_AGENT_ID")]
+    pub agent: Option<String>,
+    /// Tag a member (repeatable). Same as writing @name in the message.
+    #[arg(long = "tag")]
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Subcommand)]
