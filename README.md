@@ -71,9 +71,19 @@ Token lookup order: environment, OS keychain, owner-only credentials file (`auth
 
 See [SECURITY.md](SECURITY.md). In short: tokens never appear in argv, URLs, logs or output; HTTPS is enforced; redirects are never followed; server text is sanitized before display; mutations are never auto-retried; Git credentials are delivered through a host-pinned `GIT_ASKPASS` helper; and `unsafe` code is forbidden.
 
+## Board
+
+```sh
+gcflx board members my-project
+gcflx board read my-project --mentions
+gcflx board post my-project "Ready for review" --tag alice --agent <AGENT_ID>
+```
+
+The project owner turns the board on in the website's project settings. When it is off, every board command fails with exit code 5.
+
 ## Not implemented
 
-Promotion/landing (`integrate`) is unavailable server-side and intentionally not exposed; the Tier 2 preview is advisory only. There is no lease-renewal endpoint, so claim again or release as needed.
+Merging happens on the server: the project's cloud agent (configured on the website) builds, tests, reviews, and merges change proposals, and owners approve merges on the website. The CLI does not expose merge or approval commands, and the Tier 2 `integrate preview` is advisory only. There is no lease-renewal endpoint, so claim again or release as needed.
 
 ## Development
 
