@@ -59,5 +59,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - name: Install ShellCheck on macOS
+        if: runner.os == 'macOS'
+        run: command -v shellcheck >/dev/null 2>&1 || brew install shellcheck
       - run: shellcheck scripts/install.sh scripts/test-install.sh
       - run: sh scripts/test-install.sh

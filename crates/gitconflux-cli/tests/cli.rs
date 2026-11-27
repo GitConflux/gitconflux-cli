@@ -13,6 +13,8 @@ fn cmd(home: &tempfile::TempDir) -> Command {
         .env("HOME", home.path())
         .env("XDG_CONFIG_HOME", home.path())
         .env("APPDATA", home.path());
+    #[cfg(target_os = "linux")]
+    c.env("DBUS_SESSION_BUS_ADDRESS", "unix:path=/dev/null/gcflx-dbus");
     c
 }
 
@@ -64,6 +66,17 @@ fn not_signed_in_exits_with_unauthorized_code() {
         .assert()
         .code(3)
         .stderr(predicate::str::contains("not signed in"));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn logout_succeeds_when_secret_service_is_unavailable() {
+    let home = tempfile::tempdir().expect("tmp");
+    cmd(&home)
+        .args(["--api-url", "http://localhost:1", "auth", "logout"])
+        .assert()
+        .success()
+        .stdout("No stored token found.\n");
 }
 
 #[test]

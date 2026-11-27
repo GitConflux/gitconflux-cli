@@ -196,6 +196,10 @@ fn check_permissions(path: &Path) -> Result<()> {
 }
 
 #[cfg(not(unix))]
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "shares the fallible Unix signature"
+)]
 fn check_permissions(_path: &Path) -> Result<()> {
     // Windows: the per-user profile directory ACL restricts access to the owner.
     Ok(())
@@ -209,6 +213,10 @@ fn restrict_dir(dir: &Path) -> Result<()> {
 }
 
 #[cfg(not(unix))]
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "shares the fallible Unix signature"
+)]
 fn restrict_dir(_dir: &Path) -> Result<()> {
     Ok(())
 }
