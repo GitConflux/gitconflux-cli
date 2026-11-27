@@ -154,20 +154,51 @@ fn option_like_base_is_rejected() {
 #[test]
 fn askpass_releases_token_only_for_expected_host() {
     let bin = assert_cmd::cargo::cargo_bin("gcflx");
-    let run = |prompt: &str| {
+    let run = |host: &str, prompt: &str| {
         Std::new(&bin)
             .arg(prompt)
-            .env("GCFLX_ASKPASS_HOST", "git.example")
+            .env("GCFLX_ASKPASS_HOST", host)
             .env("GCFLX_ASKPASS_USER", "git")
-            .env("GCFLX_ASKPASS_TOKEN", "tok_secret")
+            .env("GCFLX_ASKPASS_TOKEN", "test-token")
             .output()
             .expect("run")
     };
-    let ok = run("Password for 'https://git@git.example': ");
-    assert_eq!(String::from_utf8_lossy(&ok.stdout).trim(), "tok_secret");
-    let user = run("Username for 'https://git.example': ");
+    let ok = run(
+        "git.example",
+        "Password for 'https://git@GIT.EXAMPLE/repo': ",
+    );
+    assert!(ok.status.success());
+    assert_eq!(String::from_utf8_lossy(&ok.stdout).trim(), "test-token");
+    let user = run("git.example", "Username for 'https://git.example': ");
+    assert!(user.status.success());
     assert_eq!(String::from_utf8_lossy(&user.stdout).trim(), "git");
-    let evil = run("Password for 'https://evil.example': ");
-    assert!(!evil.status.success());
-    assert_eq!(evil.stdout, Vec::<u8>::new());
+    let loopback = run("[::1]:8080", "Password for 'http://git@[::1]:8080': ");
+    assert!(loopback.status.success());
+
+    for (host, prompt) in [
+        ("git.example", "Password for 'https://other.example': "),
+        (
+            "git.example",
+            "Password for 'https://git.example.invalid': ",
+        ),
+        (
+            "git.example",
+            "Password for 'https://other.example/git.example': ",
+        ),
+        (
+            "git.example",
+            "Password for 'https://git.example@other.example': ",
+        ),
+        ("git.example", "Password for 'https://git.example:8443': "),
+        ("git.example", "Password for 'http://git.example': "),
+        ("git.example", "Password for 'git.example': "),
+        ("git.example", "Password for 'https://git.example ': "),
+        ("git.example", "Password https://git.example: "),
+        ("[::1]:8080", "Password for 'http://[::1]:8081': "),
+        ("", "Password for 'https://git.example': "),
+    ] {
+        let denied = run(host, prompt);
+        assert!(!denied.status.success(), "{prompt}");
+        assert!(denied.stdout.is_empty(), "{prompt}");
+    }
 }

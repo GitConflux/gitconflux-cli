@@ -6,14 +6,28 @@ The command is **`gcflx`**.
 
 ## Install
 
+Verifying release downloads requires [GitHub CLI](https://cli.github.com/) (`gh` v2.75.0 or newer; no login required).
+
 **macOS and Linux** (x86_64 and aarch64):
 
 ```sh
-curl --proto '=https' --tlsv1.2 -fsSL \
+curl --disable --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
   https://raw.githubusercontent.com/GitConflux/gitconflux-cli/main/scripts/install.sh | sh
 ```
 
-Installs to `~/.local/bin` (override with `GCFLX_INSTALL_DIR`; pin a release with `GCFLX_VERSION=v0.1.0`). The script needs no `sudo`, verifies the release's SHA-256 checksum before extracting, and replaces the binary atomically. Prefer to inspect first? Download `scripts/install.sh` and read it before running.
+Installs to `~/.local/bin` (override with `GCFLX_INSTALL_DIR`; pin a stable release with `GCFLX_VERSION=v0.1.0`). Before extracting, the installer checks SHA-256 and verifies the archive against signed GitHub build provenance for this repository's release workflow at the requested tag. GitHub CLI may need network access to load its trust roots. Missing or invalid provenance stops the install; older releases without provenance are not supported. The script needs no `sudo` and replaces the binary atomically. To inspect it first, download `scripts/install.sh` and read it before running.
+
+**Windows** (x86_64 and aarch64): download the matching `.zip` and `gcflx-<version>.sigstore.json` from the same [GitHub release](https://github.com/GitConflux/gitconflux-cli/releases). For example, verify the x86_64 archive in PowerShell before extracting:
+
+```powershell
+$version = "v0.1.0"
+$archive = "gcflx-$version-x86_64-pc-windows-msvc.zip"
+gh attestation verify $archive --bundle "gcflx-$version.sigstore.json" --hostname github.com `
+  --repo GitConflux/gitconflux-cli --source-ref "refs/tags/$version" `
+  --cert-identity "https://github.com/GitConflux/gitconflux-cli/.github/workflows/release.yml@refs/tags/$version" `
+  --deny-self-hosted-runners
+if ($LASTEXITCODE -ne 0) { throw "Release provenance verification failed. Do not extract." }
+```
 
 Or build from source (requires Rust and, for proposal commands, Git):
 
@@ -93,3 +107,25 @@ cargo clippy --workspace --all-targets
 cargo test --workspace
 cargo deny check
 ```
+
+### Publishing a release
+
+1. In `GitConflux/gitconflux-cli`, use tag rulesets to restrict creation of `v*` tags to release maintainers and separately block updates and deletions. Enable immutable releases. Keep the repository public for GitHub's public artifact attestations. No signing secret is required.
+2. From the CLI repository, set `RELEASE_COMMIT` to the reviewed commit SHA on `origin/main` that contains the release workflow and passed CI. Choose a new stable tag matching the workspace version, such as `v0.1.0` (no prerelease or build suffix):
+
+   ```sh
+   version=v0.1.0
+   git tag -a "$version" "$RELEASE_COMMIT" -m "Release $version"
+   git push origin "refs/tags/$version"
+   ```
+
+3. Check that the **Release** workflow validates the tag, builds all six archives, generates and verifies their shared provenance bundle, then publishes them with their checksums and `gcflx-<version>.sigstore.json`. Smoke-test the pinned release on macOS and Linux:
+
+   ```sh
+   curl --disable --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
+     "https://raw.githubusercontent.com/GitConflux/gitconflux-cli/$version/scripts/install.sh" |
+     GCFLX_VERSION="$version" GCFLX_INSTALL_DIR="$PWD/release-smoke" sh
+   "$PWD/release-smoke/gcflx" --version
+   ```
+
+   Verify the Windows archives as above. Do not move or reuse a published tag.

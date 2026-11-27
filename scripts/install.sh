@@ -1,16 +1,16 @@
 #!/bin/sh
 # GitConflux CLI installer for macOS and Linux.
 #
-#   curl --proto '=https' --tlsv1.2 -fsSL \
+#   curl --disable --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
 #     https://raw.githubusercontent.com/GitConflux/gitconflux-cli/main/scripts/install.sh | sh
 #
 # Environment:
-#   GCFLX_VERSION       Release tag to install (e.g. v0.1.0). Default: latest.
+#   GCFLX_VERSION       Stable tag vMAJOR.MINOR.PATCH. Default: latest.
 #   GCFLX_INSTALL_DIR   Install directory. Default: $HOME/.local/bin.
 #   GCFLX_DOWNLOAD_BASE Override the release download base URL (https:// or file://).
 #
-# The script never uses sudo, verifies the SHA-256 checksum of the download before
-# extracting, and only installs the single expected binary.
+# Requires GitHub CLI (gh). Verifies the release checksum and signed GitHub
+# provenance before extracting, and only installs the single expected binary.
 
 set -eu
 
@@ -24,8 +24,8 @@ need() { command -v "$1" >/dev/null 2>&1 || fail "required command not found: $1
 
 fetch() {
     # $1 = url, $2 = output file
-    curl --proto '=https,file' --tlsv1.2 --fail --silent --show-error --location \
-        --retry 3 --output "$2" "$1"
+    curl --disable --globoff --proto '=https,file' --proto-redir '=https' \
+        --tlsv1.2 --fail --silent --show-error --location --retry 3 --output "$2" -- "$1"
 }
 
 detect_target() {
@@ -46,14 +46,24 @@ detect_target() {
 
 latest_version() {
     # Follow the /releases/latest redirect instead of the rate-limited REST API.
-    url=$(curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+    url=$(curl --disable --proto '=https' --proto-redir '=https' \
+        --tlsv1.2 --fail --silent --show-error --location \
         --output /dev/null --write-out '%{url_effective}' \
         "https://github.com/$REPO/releases/latest") || fail "could not determine the latest release"
-    tag=${url##*/}
-    case "$tag" in
-        v[0-9]*) printf '%s' "$tag" ;;
+    prefix="https://github.com/$REPO/releases/tag/"
+    case "$url" in
+        "$prefix"*) printf '%s' "${url#"$prefix"}" ;;
         *) fail "no published release found at https://github.com/$REPO/releases" ;;
     esac
+}
+
+valid_version() {
+    # Keep in sync with the release workflow. The character check also rejects newlines.
+    case "$1" in
+        *[!v0123456789.]*) return 1 ;;
+    esac
+    [ "${#1}" -le 64 ] && printf '%s\n' "$1" |
+        LC_ALL=C grep -Exq 'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)'
 }
 
 sha256_of() {
@@ -74,14 +84,8 @@ main() {
 
     version=${GCFLX_VERSION:-}
     [ -n "$version" ] || version=$(latest_version)
-    case "$version" in
-        v[0-9]*) ;;
-        *) fail "invalid version '$version' (expected something like v0.1.0)" ;;
-    esac
-    # Reject anything that could alter the download URL or file paths.
-    case "$version" in
-        *[!A-Za-z0-9._-]*) fail "invalid characters in version '$version'" ;;
-    esac
+    valid_version "$version" || fail "invalid release tag (expected vMAJOR.MINOR.PATCH, at most 64 characters)"
+    command -v gh >/dev/null 2>&1 || fail "install or update GitHub CLI (gh) from https://cli.github.com/"
 
     target=$(detect_target)
     name="$BIN-$version-$target"
@@ -97,7 +101,7 @@ main() {
     trap 'rm -rf "$tmp"' EXIT INT TERM
 
     say "Installing $BIN $version for $target"
-    fetch "$base/$name.tar.gz" "$tmp/$name.tar.gz" || fail "download failed: $base/$name.tar.gz"
+    fetch "$base/$name.tar.gz" "$tmp/$name.tar.gz" || fail "archive download failed"
     fetch "$base/$name.tar.gz.sha256" "$tmp/$name.tar.gz.sha256" \
         || fail "checksum download failed"
 
@@ -108,6 +112,14 @@ main() {
     esac
     [ "${#expected}" -eq 64 ] || fail "malformed checksum file"
     [ "$expected" = "$actual" ] || fail "checksum mismatch (expected $expected, got $actual)"
+
+    bundle="$BIN-$version.sigstore.json"
+    fetch "$base/$bundle" "$tmp/$bundle" || fail "release provenance download failed"
+    ref="refs/tags/$version"
+    GH_PROMPT_DISABLED=1 gh attestation verify "$tmp/$name.tar.gz" \
+        --bundle "$tmp/$bundle" --hostname github.com --repo "$REPO" --source-ref "$ref" \
+        --cert-identity "https://github.com/$REPO/.github/workflows/release.yml@$ref" \
+        --deny-self-hosted-runners || fail "release provenance verification failed"
 
     # Extract only the one member we expect, into the private temp directory.
     mkdir "$tmp/extract"

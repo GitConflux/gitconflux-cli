@@ -13,4 +13,4 @@ Please report suspected vulnerabilities privately through GitHub's "Report a vul
 - **Mutations:** never retried automatically (the API has no idempotency keys); only idempotent GETs retry on transient errors.
 - **Subprocesses:** `git` is run with an argument array (no shell), a scrubbed environment, no prompts, a timeout and bounded output.
 - **Code safety:** `unsafe` is forbidden workspace-wide; `unwrap`/`expect`/`panic` are denied outside tests.
-- **Supply chain:** `cargo deny` (advisories, licenses, sources) runs in CI; release builds use `--locked`.
+- **Supply chain:** CI uses commit-pinned actions and runs `cargo deny`. Release builds use `--locked`, and the installer verifies GitHub-signed build provenance for the exact release workflow and tag before extraction. A checksum alone cannot authorize an install.

@@ -8,7 +8,24 @@ permissions:
   contents: read
 
 jobs:
+  validate:
+    if: github.ref_type == 'tag' && !github.event.deleted
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Validate release tag
+        shell: bash
+        run: |
+          # Keep the stable release tag format in sync with scripts/install.sh.
+          export LC_ALL=C
+          if [[ ${#GITHUB_REF_NAME} -gt 64 ||
+                ! "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo 'Release tag must be vMAJOR.MINOR.PATCH (at most 64 characters).' >&2
+            exit 1
+          fi
+
   build:
+    needs: validate
     name: build (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -18,26 +35,29 @@ jobs:
           - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
           - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
           - { os: macos-latest, target: aarch64-apple-darwin }
-          - { os: macos-13, target: x86_64-apple-darwin }
+          - { os: macos-15-intel, target: x86_64-apple-darwin }
           - { os: windows-latest, target: x86_64-pc-windows-msvc }
           - { os: windows-11-arm, target: aarch64-pc-windows-msvc }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         with:
+          toolchain: stable
           targets: ${{ matrix.target }}
       - run: cargo build --release --locked --target ${{ matrix.target }} -p gitconflux-cli
       - name: Package
         shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
         run: |
           set -euo pipefail
-          name="gcflx-${{ github.ref_name }}-${{ matrix.target }}"
+          name="gcflx-$GITHUB_REF_NAME-$TARGET"
           mkdir "$name"
-          bin=gcflx; [[ "${{ matrix.target }}" == *windows* ]] && bin=gcflx.exe
-          cp "target/${{ matrix.target }}/release/$bin" "$name/"
-          if [[ "${{ matrix.target }}" == *windows* ]]; then
+          bin=gcflx; [[ "$TARGET" == *windows* ]] && bin=gcflx.exe
+          cp "target/$TARGET/release/$bin" "$name/"
+          if [[ "$TARGET" == *windows* ]]; then
             7z a "$name.zip" "$name" >/dev/null; asset="$name.zip"
           else
             tar czf "$name.tar.gz" "$name"; asset="$name.tar.gz"
@@ -45,9 +65,10 @@ jobs:
           if command -v sha256sum >/dev/null; then sha256sum "$asset" > "$asset.sha256"
           else shasum -a 256 "$asset" > "$asset.sha256"; fi
           echo "ASSET=$asset" >> "$GITHUB_ENV"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ matrix.target }}
+          if-no-files-found: error
           path: |
             ${{ env.ASSET }}
             ${{ env.ASSET }}.sha256
@@ -57,12 +78,33 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: dist
           merge-multiple: true
-      - name: Create GitHub release
+      - name: Attest release archives
+        id: provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
+      - name: Verify provenance and publish
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" dist/* --repo "${{ github.repository }}" --generate-notes
+          BUNDLE_PATH: ${{ steps.provenance.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          bundle="dist/gcflx-$GITHUB_REF_NAME.sigstore.json"
+          cp "$BUNDLE_PATH" "$bundle"
+          for archive in dist/*.tar.gz dist/*.zip; do
+            gh attestation verify "$archive" --bundle "$bundle" --hostname github.com \
+              --repo "$GITHUB_REPOSITORY" --source-ref "$GITHUB_REF" \
+              --cert-identity "https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@$GITHUB_REF" \
+              --deny-self-hosted-runners
+          done
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes
